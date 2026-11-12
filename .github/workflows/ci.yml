@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  amd64:
+    runs-on: ubuntu-24.04
+    env:
+      CGO_ENABLED: 0
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - run: gofmt -l . | tee /dev/stderr | (! read)
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+      - name: Test
+        run: go test -count=1 ./...
+      - name: Test (race)
+        env:
+          CGO_ENABLED: 1
+        run: go test -race -count=1 ./...
+      - name: Fuzz seeds and a short fuzz
+        run: go test -run '^$' -fuzz '^FuzzDecode$' -fuzztime 10s .
+      - name: Cross-build without cgo
+        run: GOOS=linux GOARCH=arm64 go build ./...
+
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    env:
+      CGO_ENABLED: 0
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Test (golden hashes are hash-exact here too)
+        run: go test -count=1 ./...
