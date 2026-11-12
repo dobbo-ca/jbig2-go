@@ -1,5 +1,7 @@
 package jbig2
 
+import "context"
+
 // decoder is the MQ arithmetic decoder of T.88 Annex E.3, the exact inverse of
 // encoder (mq.go). It shares qeTable and contexts with the encoder, so the two
 // directions can never drift apart on the probability estimates or on the state
@@ -15,6 +17,9 @@ type decoder struct {
 	ct int    // bits remaining in the current byte
 	in []byte
 	bp int
+	// ctx, when set, is checked between rows by the region decoders that
+	// are handed this decoder.
+	ctx context.Context
 }
 
 // at returns the coded byte at i, or 0xFF for any index outside in.

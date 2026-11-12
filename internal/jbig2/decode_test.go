@@ -2,6 +2,7 @@ package jbig2
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -65,7 +66,7 @@ func TestMQDecodeConformanceVector(t *testing.T) {
 // context -- against T.88 rather than against EncodeGenericRegion.
 func TestDecodeGenericRegionAnnexH1(t *testing.T) {
 	data := []byte{0x04, 0xEE, 0xED, 0x87, 0xFB, 0xCB, 0x2B, 0xFF, 0xAC}
-	got, err := decodeGenericRegion(data, 54, 44, true)
+	got, err := decodeGenericRegion(context.Background(), data, 54, 44, true)
 	if err != nil {
 		t.Fatalf("decodeGenericRegion() error = %v", err)
 	}
@@ -136,7 +137,7 @@ func TestDecodeTPGDOff(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			want.MaskPadding()
 			data := EncodeGenericRegion(want, false)
-			got, err := decodeGenericRegion(data, want.W, want.H, false)
+			got, err := decodeGenericRegion(context.Background(), data, want.W, want.H, false)
 			if err != nil {
 				t.Fatalf("decodeGenericRegion() error = %v", err)
 			}
@@ -450,7 +451,7 @@ func TestDecodeTruncatedCodedDataDoesNotPanic(t *testing.T) {
 	b.MaskPadding()
 	data := EncodeGenericRegion(b, true)
 	for cut := len(data); cut >= 0; cut-- {
-		got, err := decodeGenericRegion(data[:cut], b.W, b.H, true)
+		got, err := decodeGenericRegion(context.Background(), data[:cut], b.W, b.H, true)
 		if err != nil {
 			t.Fatalf("cut to %d bytes: decodeGenericRegion() error = %v", cut, err)
 		}
@@ -459,7 +460,7 @@ func TestDecodeTruncatedCodedDataDoesNotPanic(t *testing.T) {
 		}
 	}
 	// The full stream is the only cut that has to be right.
-	got, err := decodeGenericRegion(data, b.W, b.H, true)
+	got, err := decodeGenericRegion(context.Background(), data, b.W, b.H, true)
 	if err != nil {
 		t.Fatalf("decodeGenericRegion() error = %v", err)
 	}
@@ -770,7 +771,7 @@ func TestParseSegmentsHeaderArithmetic(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			parsed, err := parseSegments(c.h.bytes())
+			parsed, err := parseSegments(c.h.bytes(), legacy)
 			if err != nil {
 				t.Fatalf("parseSegments() error = %v", err)
 			}
@@ -802,7 +803,7 @@ func TestParseSegmentsHeaderArithmetic(t *testing.T) {
 		second := handHeader{num: 70001, typ: segTypeImmediateGenericRegion,
 			refs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9}, refBytes: 4,
 			longCount: true, retainBytes: 2, deferred: true, data: []byte{0x33}}
-		parsed, err := parseSegments(append(first.bytes(), second.bytes()...))
+		parsed, err := parseSegments(append(first.bytes(), second.bytes()...), legacy)
 		if err != nil {
 			t.Fatalf("parseSegments() error = %v", err)
 		}
@@ -1038,7 +1039,7 @@ func TestResourceBudgetsArePinnedFromAbove(t *testing.T) {
 	// single region -- refused from its 26-byte header before the arithmetic
 	// decoder is started.
 	t.Run("one-region", func(t *testing.T) {
-		if _, _, err := decodeGenericRegionSegment(regionSegmentData(5, 13421773)); err == nil {
+		if _, _, err := decodeGenericRegionSegment(context.Background(), regionSegmentData(5, 13421773), legacy); err == nil {
 			t.Fatal("a 5x13421773 region is 67,108,865 pixels, one over the 67,108,864 cap on " +
 				"one region, and must be refused from its header")
 		}
@@ -1413,7 +1414,7 @@ func TestHeaderRefusalsAreAttributedToTheFieldThatBrokeThem(t *testing.T) {
 	// "generic region" -- from the field that is wrong to the procedure that
 	// tripped over it.
 	t.Run("a-region-with-a-zero-dimension", func(t *testing.T) {
-		_, _, err := decodeGenericRegionSegment(regionSegmentData(0, 4))
+		_, _, err := decodeGenericRegionSegment(context.Background(), regionSegmentData(0, 4), legacy)
 		if err == nil {
 			t.Fatal("a 0x4 region has no pixels and must be refused")
 		}
@@ -1434,7 +1435,7 @@ func TestHeaderRefusalsAreAttributedToTheFieldThatBrokeThem(t *testing.T) {
 	// bitmap with no rows and reports the failure against the coded data rather
 	// than against the 17 bytes of header that are wrong.
 	t.Run("a-region-with-a-zero-height", func(t *testing.T) {
-		_, _, err := decodeGenericRegionSegment(regionSegmentData(4, 0))
+		_, _, err := decodeGenericRegionSegment(context.Background(), regionSegmentData(4, 0), legacy)
 		if err == nil {
 			t.Fatal("a 4x0 region has no pixels and must be refused")
 		}
@@ -1623,7 +1624,7 @@ func TestHeaderRefusalsAreAttributedToTheFieldThatBrokeThem(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the case's own hex is malformed: %v", err)
 		}
-		if _, err = parseSegments(s); err == nil {
+		if _, err = parseSegments(s, legacy); err == nil {
 			t.Fatal("a segment referring to 16,777,215 other segments in an 11-byte stream " +
 				"must be refused")
 		}
@@ -1666,7 +1667,7 @@ func TestUnknownSegmentDataLengthIsAFeatureNotDamage(t *testing.T) {
 	s := bytes.Clone(base)
 	binary.BigEndian.PutUint32(s[7:11], 0xFFFFFFFF)
 
-	_, err = parseSegments(s)
+	_, err = parseSegments(s, legacy)
 	if err == nil {
 		t.Fatal("a segment declaring the unknown data length 0xFFFFFFFF must be refused; " +
 			"finding where it ends means running the arithmetic decoder to look for a " +
@@ -2119,7 +2120,7 @@ func TestSegmentCountBoundAdmitsLegitimateStreams(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EmbeddedStream() error = %v", err)
 		}
-		parsed, err := parseSegments(s)
+		parsed, err := parseSegments(s, legacy)
 		if err != nil {
 			t.Fatalf("parseSegments() on this package's own output: %v", err)
 		}

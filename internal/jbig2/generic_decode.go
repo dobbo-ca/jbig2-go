@@ -1,6 +1,7 @@
 package jbig2
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 )
@@ -54,7 +55,7 @@ func DecodedPixels() int64 { return decodedPixels.Load() }
 // unexported function gets an error rather than NewBitmap's panic, and that is
 // not a distinction worth leaving to whoever adds one. Documented rather than
 // pinned, because a test that cannot fail is worse than no test.
-func decodeGenericRegion(data []byte, w, h int, tpgdon bool) (*Bitmap, error) {
+func decodeGenericRegion(ctx context.Context, data []byte, w, h int, tpgdon bool) (*Bitmap, error) {
 	if w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("jbig2: generic region is %dx%d; dimensions must be positive", w, h)
 	}
@@ -67,6 +68,9 @@ func decodeGenericRegion(data []byte, w, h int, tpgdon bool) (*Bitmap, error) {
 
 	ltp := 0
 	for y := 0; y < h; y++ {
+		if err := ctxErr(ctx); err != nil {
+			return nil, err
+		}
 		if tpgdon {
 			work++
 			ltp ^= d.decode(cx, sltpContextTemplate0)

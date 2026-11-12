@@ -189,9 +189,9 @@ type textRegionHeader struct {
 	dataOff int // offset in the segment data where the symbol ID codes start
 }
 
-func parseTextRegionHeader(d []byte) (textRegionHeader, error) {
+func parseTextRegionHeader(d []byte, lim Limits) (textRegionHeader, error) {
 	var h textRegionHeader
-	info, err := parseRegionInfo(d)
+	info, err := parseRegionInfo(d, lim)
 	if err != nil {
 		return h, err
 	}

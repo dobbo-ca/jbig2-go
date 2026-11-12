@@ -1,5 +1,7 @@
 package jbig2
 
+import "context"
+
 // sltpContextTemplate0 is the fixed context used to code the SLTP bit under
 // TPGDON with GBTEMPLATE 0 (T.88 6.2.5.7, Figure 8). It is read in the same
 // reading order as contextTemplate0, and it always uses the nominal template
@@ -60,6 +62,12 @@ func contextTemplate0(b *Bitmap, x, y int) int {
 // The cost of that is a larger stream, never a wrong one — which is exactly why
 // it would go unnoticed.
 func EncodeGenericRegion(b *Bitmap, tpgdon bool) []byte {
+	out, _ := encodeGenericRegion(context.Background(), b, tpgdon)
+	return out
+}
+
+// encodeGenericRegion is EncodeGenericRegion, checking ctx before every row.
+func encodeGenericRegion(ctx context.Context, b *Bitmap, tpgdon bool) ([]byte, error) {
 	b.MaskPadding()
 
 	cx := make(contexts, 1<<16)
@@ -67,6 +75,9 @@ func EncodeGenericRegion(b *Bitmap, tpgdon bool) []byte {
 
 	ltp := 0
 	for y := 0; y < b.H; y++ {
+		if err := ctxErr(ctx); err != nil {
+			return nil, err
+		}
 		if tpgdon {
 			next := 0
 			if b.RowEqualAbove(y) {
@@ -100,5 +111,5 @@ func EncodeGenericRegion(b *Bitmap, tpgdon bool) []byte {
 			runLeft = (runLeft<<1 | pix) & 0x0F
 		}
 	}
-	return e.flush()
+	return e.flush(), nil
 }

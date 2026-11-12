@@ -45,6 +45,7 @@ func decodeSymbolDict(sg segment, input []*Bitmap, budget *streamBudget) ([]*Bit
 	}
 
 	d := newDecoder(sg.data[h.dataOff:])
+	d.ctx = budget.ctx
 	// One context array for every symbol in the dictionary (T.88 6.5.8.1): the
 	// statistics learned on the first glyph are what compress the second, so
 	// this is allocated here and not per symbol.
@@ -54,7 +55,7 @@ func decodeSymbolDict(sg segment, input []*Bitmap, budget *streamBudget) ([]*Bit
 	// which unsupported() refused above.
 	iadh, iadw, iaex := newIntContexts(), newIntContexts(), newIntContexts()
 
-	newSyms := make([]*Bitmap, 0, min(int(h.numNew), maxStreamSymbols))
+	newSyms := make([]*Bitmap, 0, min(int64(h.numNew), budget.lim.Symbols))
 	hcHeight := 0
 	for len(newSyms) < int(h.numNew) {
 		dh, ok := decodeInt(d, iadh)
@@ -77,6 +78,9 @@ func decodeSymbolDict(sg segment, input []*Bitmap, budget *streamBudget) ([]*Bit
 			}
 			if len(newSyms) == int(h.numNew) {
 				return nil, fmt.Errorf("jbig2: symbol dictionary declares %d new symbols and codes more", h.numNew)
+			}
+			if err := ctxErr(budget.ctx); err != nil {
+				return nil, err
 			}
 			if err := budget.chargeBitmap(int64(symWidth), int64(hcHeight)); err != nil {
 				return nil, err

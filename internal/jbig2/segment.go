@@ -1,6 +1,7 @@
 package jbig2
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -64,6 +65,11 @@ func pageInfoSegmentData(width, height int) []byte {
 // The region flags byte is MMR in bit 0, GBTEMPLATE in bits 1-2, TPGDON in
 // bit 3, and reserved zeros above: template 0 with TPGDON is 0x08.
 func genericRegionSegmentData(b *Bitmap, x, y int, tpgdon bool) []byte {
+	d, _ := genericRegionSegmentDataCtx(context.Background(), b, x, y, tpgdon)
+	return d
+}
+
+func genericRegionSegmentDataCtx(ctx context.Context, b *Bitmap, x, y int, tpgdon bool) ([]byte, error) {
 	d := make([]byte, 0, 26+b.H)
 	d = binary.BigEndian.AppendUint32(d, uint32(b.W))
 	d = binary.BigEndian.AppendUint32(d, uint32(b.H))
@@ -77,7 +83,11 @@ func genericRegionSegmentData(b *Bitmap, x, y int, tpgdon bool) []byte {
 	}
 	d = append(d, flags)
 	d = append(d, nominalATTemplate0...)
-	return append(d, EncodeGenericRegion(b, tpgdon)...)
+	coded, err := encodeGenericRegion(ctx, b, tpgdon)
+	if err != nil {
+		return nil, err
+	}
+	return append(d, coded...), nil
 }
 
 // EmbeddedStream encodes b as a complete JBIG2 bitstream in the embedded file
@@ -90,6 +100,11 @@ func genericRegionSegmentData(b *Bitmap, x, y int, tpgdon bool) []byte {
 // no page-0 (global) segments, so the image XObject needs no /DecodeParms and
 // no /JBIG2Globals stream.
 func EmbeddedStream(b *Bitmap) ([]byte, error) {
+	return EncodeStream(context.Background(), b)
+}
+
+// EncodeStream is EmbeddedStream, checking ctx before every row.
+func EncodeStream(ctx context.Context, b *Bitmap) ([]byte, error) {
 	if b.W <= 0 || b.H <= 0 {
 		return nil, fmt.Errorf("jbig2: bitmap is %dx%d; dimensions must be positive", b.W, b.H)
 	}
@@ -99,7 +114,10 @@ func EmbeddedStream(b *Bitmap) ([]byte, error) {
 	}
 
 	pi := pageInfoSegmentData(b.W, b.H)
-	gr := genericRegionSegmentData(b, 0, 0, true)
+	gr, err := genericRegionSegmentDataCtx(ctx, b, 0, 0, true)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]byte, 0, 22+len(pi)+len(gr))
 	out = append(out, segmentHeader(0, segTypePageInformation, 1, len(pi))...)

@@ -37,7 +37,7 @@ func TestParseSegmentsRetainsReferredToNumbers(t *testing.T) {
 			longCount: true, retainBytes: 2, data: []byte{0x01}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			p, err := parseSegments(c.h.bytes())
+			p, err := parseSegments(c.h.bytes(), legacy)
 			if err != nil {
 				t.Fatalf("parseSegments() error = %v", err)
 			}
@@ -64,7 +64,7 @@ func TestRefsOfIsPerSegmentAcrossASharedSlab(t *testing.T) {
 		refs: []uint32{1, 2}, refBytes: 1, data: []byte{0x03}}
 
 	s := append(first.bytes(), second.bytes()...)
-	p, err := parseSegments(append(s, third.bytes()...))
+	p, err := parseSegments(append(s, third.bytes()...), legacy)
 	if err != nil {
 		t.Fatalf("parseSegments() error = %v", err)
 	}
@@ -101,7 +101,7 @@ func TestTotalReferredToNumbersAreBounded(t *testing.T) {
 			refs: make([]uint32, 8), refBytes: refBytes,
 			longCount: true, retainBytes: 2, data: nil}.bytes()...)
 	}
-	_, err := parseSegments(s)
+	_, err := parseSegments(s, legacy)
 	if err == nil {
 		t.Fatalf("parseSegments accepted a stream carrying more than %d referred-to numbers",
 			int64(maxStreamRefs))

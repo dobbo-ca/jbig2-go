@@ -1,6 +1,6 @@
 package jbig2
 
-import "fmt"
+import "context"
 
 // The resource budget for symbol mode, and the one place in this package where a
 // bound is enforced DURING decoding rather than from the headers.
@@ -119,12 +119,15 @@ type streamBudget struct {
 	// The limit is maxRegionOverdraw*pagePixels + overdrawFloorPixels.
 	pagePixels     int64
 	placementLimit int64
+	lim            Limits
+	ctx            context.Context
 }
 
 func (b *streamBudget) chargeSymbols(n int64) error {
-	if n < 0 || b.symbols+n > maxStreamSymbols {
-		return fmt.Errorf("jbig2: the stream's symbol dictionaries declare more than %d symbols; the limit "+
-			"is an order of magnitude past the largest alphabet a script puts on a page", int64(maxStreamSymbols))
+	if n < 0 || b.symbols+n > b.lim.Symbols {
+		return limitErr("Symbols", b.symbols+n, b.lim.Symbols,
+			"jbig2: the stream's symbol dictionaries declare more than %d symbols; the limit "+
+				"is an order of magnitude past the largest alphabet a script puts on a page", b.lim.Symbols)
 	}
 	b.symbols += n
 	return nil
@@ -132,8 +135,9 @@ func (b *streamBudget) chargeSymbols(n int64) error {
 
 func (b *streamBudget) chargeInstances(n int64) error {
 	if n < 0 || b.instances+n > maxStreamInstances {
-		return fmt.Errorf("jbig2: the stream's text regions declare more than %d symbol instances; each one "+
-			"costs coordinate decoding before it draws anything", int64(maxStreamInstances))
+		return limitErr("Instances", b.instances+n, maxStreamInstances,
+			"jbig2: the stream's text regions declare more than %d symbol instances; each one "+
+				"costs coordinate decoding before it draws anything", int64(maxStreamInstances))
 	}
 	b.instances += n
 	return nil
@@ -143,15 +147,16 @@ func (b *streamBudget) chargeInstances(n int64) error {
 // rules 2 and 4 set for the whole stream. It is called with the dimensions
 // BEFORE the bitmap exists.
 func (b *streamBudget) chargeBitmap(w, h int64) error {
-	if w <= 0 || h <= 0 || w > MaxPagePixels || h > MaxPagePixels {
-		return fmt.Errorf("jbig2: symbol is %dx%d", w, h)
+	if w <= 0 || h <= 0 || w > b.lim.PagePixels || h > b.lim.PagePixels {
+		return limitErr("PagePixels", max(w, h), b.lim.PagePixels, "jbig2: symbol is %dx%d", w, h)
 	}
 	b.pixels += w * h
 	b.bmBytes += (w + 7) / 8 * h
-	if b.pixels > MaxPagePixels || b.bmBytes > maxStreamBitmapBytes {
-		return fmt.Errorf("jbig2: decoding a %dx%d symbol takes the stream to %d pixels in %d bytes; "+
-			"the budget for one stream is %d pixels in %d bytes",
-			w, h, b.pixels, b.bmBytes, int64(MaxPagePixels), int64(maxStreamBitmapBytes))
+	if b.pixels > b.lim.PagePixels || b.bmBytes > b.lim.bitmapBytes() {
+		return limitErr("PagePixels", b.pixels, b.lim.PagePixels,
+			"jbig2: decoding a %dx%d symbol takes the stream to %d pixels in %d bytes; "+
+				"the budget for one stream is %d pixels in %d bytes",
+			w, h, b.pixels, b.bmBytes, b.lim.PagePixels, b.lim.bitmapBytes())
 	}
 	return nil
 }
@@ -162,9 +167,10 @@ func (b *streamBudget) chargeBitmap(w, h int64) error {
 func (b *streamBudget) chargePlacement(w, h int64) error {
 	b.placement += w * h
 	if b.placement > b.placementLimit {
-		return fmt.Errorf("jbig2: the stream's text regions want to draw %d pixels of symbol onto a page "+
-			"that can show %d; the budget admits %dx the page plus %d pixels, and everything past that is "+
-			"drawn over or off the edge", b.placement, b.pagePixels,
+		return limitErr("Placement", b.placement, b.placementLimit,
+			"jbig2: the stream's text regions want to draw %d pixels of symbol onto a page "+
+				"that can show %d; the budget admits %dx the page plus %d pixels, and everything past that is "+
+				"drawn over or off the edge", b.placement, b.pagePixels,
 			int64(maxRegionOverdraw), int64(overdrawFloorPixels))
 	}
 	decodedPixels.Add(w * h)

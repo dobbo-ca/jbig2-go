@@ -104,6 +104,9 @@ func decodeGenericRegionGeneral(d *decoder, cx contexts, w, h, template int, at 
 
 	ltp := 0
 	for y := 0; y < h; y++ {
+		if err := ctxErr(d.ctx); err != nil {
+			return nil, err
+		}
 		if tpgdon {
 			work++
 			ltp ^= d.decode(cx, sltpContexts[template])

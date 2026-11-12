@@ -21,7 +21,7 @@ import "fmt"
 // decodeTextRegion decodes one text region segment against syms, the symbol list
 // its referred-to dictionaries exported.
 func decodeTextRegion(sg segment, syms []*Bitmap, budget *streamBudget) (*Bitmap, regionInfo, error) {
-	h, err := parseTextRegionHeader(sg.data)
+	h, err := parseTextRegionHeader(sg.data, budget.lim)
 	if err != nil {
 		return nil, regionInfo{}, err
 	}
@@ -47,6 +47,7 @@ func decodeTextRegion(sg segment, syms []*Bitmap, budget *streamBudget) (*Bitmap
 	}
 
 	d := newDecoder(sg.data[h.dataOff:])
+	d.ctx = budget.ctx
 	iadt, iafs, iads, iait := newIntContexts(), newIntContexts(), newIntContexts(), newIntContexts()
 	iaid := make(contexts, 1<<(codeLen+1))
 
@@ -83,6 +84,11 @@ func decodeTextRegion(sg segment, syms []*Bitmap, budget *streamBudget) (*Bitmap
 			if placed == int(h.numInstances) {
 				return nil, regionInfo{}, fmt.Errorf("jbig2: text region declares %d instances and codes more",
 					h.numInstances)
+			}
+			if placed&1023 == 0 {
+				if err := ctxErr(budget.ctx); err != nil {
+					return nil, regionInfo{}, err
+				}
 			}
 			curT := 0
 			if strips != 1 {

@@ -41,7 +41,7 @@ func ProfileStream(globals, s []byte) ([]Profile, error) {
 		joined = append(joined, globals...)
 		s = append(joined, s...)
 	}
-	parsed, err := parseSegments(s)
+	parsed, err := parseSegments(s, legacy)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func ProfileStream(globals, s []byte) ([]Profile, error) {
 			}
 
 		case segTypeIntermediateTextRegion, segTypeImmediateTextRegion, segTypeImmediateLosslessTextRegion:
-			h, err := parseTextRegionHeader(sg.data)
+			h, err := parseTextRegionHeader(sg.data, legacy)
 			if err != nil {
 				p.Err = err.Error()
 				break
