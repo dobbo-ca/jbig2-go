@@ -9,8 +9,11 @@
 // ErrUnsupportedFeature before any coded bit is read.
 //
 // Every entry point takes Limits, checked against the stream's headers before
-// anything is allocated, and a context checked between rows. See
-// docs/guides/memory-limits.md.
+// anything is allocated, and a context checked between rows. Memory comes
+// from a process-wide pool (SetMemoryLimit), or, with Limits.Reserved, from
+// the caller's own reservation bounded by Limits.MaxBytes. A request that can
+// never fit is a permanent *LimitError; ErrMemoryLimit means it would fit
+// alone but not now, and is transient. See docs/guides/memory-limits.md.
 package jbig2
 
 import (
@@ -36,10 +39,14 @@ var (
 	// ErrUnsupportedFeature marks a legal stream this package does not decode.
 	ErrUnsupportedFeature = ij.ErrUnsupportedFeature
 	// ErrMemoryLimit is returned, before anything is allocated, when a call's
-	// estimated peak does not fit what SetMemoryLimit leaves free.
+	// estimated peak would fit the pool alone but not what SetMemoryLimit
+	// leaves free now: retrying later can succeed. A call that could never
+	// fit is a *LimitError named "MemoryLimit" or "MaxBytes" instead.
 	ErrMemoryLimit = errors.New("jbig2: memory limit exceeded")
-	// ErrInvalid marks a negative limit or a malformed Bitmap.
+	// ErrInvalid marks a negative limit, Reserved without MaxBytes, or a malformed Bitmap.
 	ErrInvalid = errors.New("jbig2: invalid argument")
+	// ErrNoPageSize is wrapped by PageSize when the headers do not give a page size.
+	ErrNoPageSize = errors.New("jbig2: no page size in headers")
 )
 
 // Defaults for the zero fields of Limits.
@@ -55,11 +62,44 @@ type Limits struct {
 	PagePixels int64 // page and region pixels (default DefaultPagePixels)
 	Symbols    int64 // symbols per dictionary and per stream (default DefaultSymbols)
 	Regions    int64 // segments per stream (default DefaultRegions)
+
+	// MaxBytes is the most memory one call may reserve, by the library's own
+	// estimate (see docs/guides/memory-limits.md). 0 is no extra bound. An
+	// estimate above it is a *LimitError named "MaxBytes", returned before
+	// anything is allocated; it is permanent, the call can never fit.
+	MaxBytes int64
+	// Reserved says the caller already holds MaxBytes for this call from its
+	// own pool. The call then skips the package pool and is bounded by
+	// MaxBytes alone. It needs MaxBytes > 0, else ErrInvalid.
+	Reserved bool
+}
+
+// reserver is the per-call reservation hook: MaxBytes bounds what the call
+// reserves in total, and unless Reserved the package pool is charged too.
+func (l Limits) reserver() func(int64) (func(), error) {
+	var used int64
+	return func(n int64) (func(), error) {
+		if l.MaxBytes > 0 && used+n > l.MaxBytes {
+			return nil, &LimitError{Name: "MaxBytes", Got: used + n, Max: l.MaxBytes}
+		}
+		release := func() {}
+		if !l.Reserved {
+			var err error
+			if release, err = reserve(n); err != nil {
+				return nil, err
+			}
+		}
+		used += n
+		return func() { used -= n; release() }, nil
+	}
 }
 
 func (l Limits) resolve() (ij.Limits, error) {
-	if l.PagePixels < 0 || l.Symbols < 0 || l.Regions < 0 {
+	if l.PagePixels < 0 || l.Symbols < 0 || l.Regions < 0 || l.MaxBytes < 0 {
 		return ij.Limits{}, fmt.Errorf("%w: negative limit", ErrInvalid)
+	}
+	if l.Reserved && l.MaxBytes == 0 {
+		return ij.Limits{}, fmt.Errorf("%w: Reserved needs MaxBytes", ErrInvalid)
 	}
 	r := ij.Limits{PagePixels: l.PagePixels, Symbols: l.Symbols, Regions: l.Regions}
 	if r.PagePixels == 0 {
@@ -99,7 +139,7 @@ func Encode(ctx context.Context, b *Bitmap, lim Limits) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	release, err := reserve(encodeEstimate(b))
+	release, err := lim.reserver()(encodeEstimate(b))
 	if err != nil {
 		return nil, err
 	}
@@ -117,5 +157,18 @@ func Decode(ctx context.Context, data, globals []byte, lim Limits) (*Bitmap, err
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return ij.DecodeStream(ctx, globals, data, l, reserve)
+	return ij.DecodeStream(ctx, globals, data, l, lim.reserver())
+}
+
+// PageSize returns the page width and height from the page-information segment,
+// reading segment headers only: nothing proportional to the page is allocated.
+// globals is the /JBIG2Globals stream or nil. An unknown height (a striped
+// page), a missing page-information segment or malformed headers return an
+// error wrapping ErrNoPageSize.
+func PageSize(data, globals []byte) (w, h int, err error) {
+	w, h, err = ij.PageInfoSize(globals, data)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: %w", ErrNoPageSize, err)
+	}
+	return w, h, nil
 }
