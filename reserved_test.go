@@ -26,13 +26,15 @@ func TestReservedMaxBytes(t *testing.T) {
 	defer SetMemoryLimit(0)
 	u0, p0 := memoryUsage()
 
+	// A declared 8000x8000 page needs 8 MB; refusing must allocate far less.
+	big := stream(8000, 8000, 8000, 8000, nil)
 	a := allocated(func() {
-		_, err := Decode(context.Background(), data, nil, Limits{MaxBytes: 1000, Reserved: true})
+		_, err := Decode(context.Background(), big, nil, Limits{MaxBytes: 1000, Reserved: true})
 		if !isLimit(err, "MaxBytes") {
 			t.Errorf("err = %v; want MaxBytes LimitError", err)
 		}
 	})
-	if a > 1<<20 {
+	if a > 1<<18 {
 		t.Errorf("refused call allocated %d bytes", a)
 	}
 	if _, err := Decode(context.Background(), data, nil, Limits{MaxBytes: 1 << 30, Reserved: true}); err != nil {
@@ -41,8 +43,14 @@ func TestReservedMaxBytes(t *testing.T) {
 	if u, p := memoryUsage(); u != u0 || p != p0 {
 		t.Errorf("pool moved: used %d->%d peak %d->%d", u0, u, p0, p)
 	}
-	if _, err := Encode(context.Background(), NewBitmap(64, 64), Limits{MaxBytes: 10, Reserved: true}); !isLimit(err, "MaxBytes") {
-		t.Errorf("Encode err = %v; want MaxBytes LimitError", err)
+	bm := NewBitmap(8000, 8000)
+	a = allocated(func() {
+		if _, err := Encode(context.Background(), bm, Limits{MaxBytes: 10, Reserved: true}); !isLimit(err, "MaxBytes") {
+			t.Errorf("Encode err = %v; want MaxBytes LimitError", err)
+		}
+	})
+	if a > 1<<18 {
+		t.Errorf("refused Encode allocated %d bytes", a)
 	}
 	if _, err := Encode(context.Background(), NewBitmap(64, 64), Limits{MaxBytes: 1 << 30, Reserved: true}); err != nil {
 		t.Errorf("Encode: %v", err)
