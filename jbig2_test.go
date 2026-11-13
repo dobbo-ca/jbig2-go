@@ -207,7 +207,7 @@ func TestRefusesBeforeAllocating(t *testing.T) {
 		{"symbol dictionary", fixture(t, "symbol-page.jb2"), forged, Limits{}, 0, ErrLimit, "Symbols"},
 		{"symbols limit", fixture(t, "symbol-page.jb2"), globals, Limits{Symbols: 4}, 0, ErrLimit, "Symbols"},
 		{"regions limit", fixture(t, "symbol-page.jb2"), globals, Limits{Regions: 1}, 0, ErrLimit, "Regions"},
-		{"memory", stream(8000, 8000, 8000, 8000, nil), nil, Limits{}, 1 << 20, ErrMemoryLimit, ""},
+		{"memory", stream(8000, 8000, 8000, 8000, nil), nil, Limits{}, 1 << 20, ErrLimit, "MemoryLimit"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.memory > 0 {
