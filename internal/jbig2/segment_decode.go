@@ -1009,6 +1009,36 @@ func PageSizeLimits(globals, s []byte, lim Limits) (w, h int, err error) {
 	return p.pageW, p.pageH, nil
 }
 
+// PageInfoSize is the page-information segment's width and height, from the
+// segment headers alone: unlike PageSizeLimits it does not plan the regions,
+// so a stream cut off after the page-information segment still answers, and an
+// unknown height (0xFFFFFFFF) is an error rather than sized from regions.
+func PageInfoSize(globals, s []byte) (w, h int, err error) {
+	if len(globals) > 0 {
+		joined := make([]byte, 0, len(globals)+len(s))
+		joined = append(joined, globals...)
+		s = append(joined, s...)
+	}
+	parsed, err := parseSegments(s, legacy)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, sg := range parsed.segs {
+		if sg.typ != segTypePageInformation {
+			continue
+		}
+		if len(sg.data) < 8 {
+			return 0, 0, errors.New("jbig2: page information segment is too short")
+		}
+		pw, ph := binary.BigEndian.Uint32(sg.data[0:4]), binary.BigEndian.Uint32(sg.data[4:8])
+		if pw == 0 || ph == 0 || ph == 0xFFFFFFFF {
+			return 0, 0, fmt.Errorf("jbig2: page information segment declares %dx%d", pw, ph)
+		}
+		return int(pw), int(ph), nil
+	}
+	return 0, 0, errors.New("jbig2: stream has no page information segment")
+}
+
 // streamPlan is everything a stream's HEADERS determine: the page to compose
 // onto, and the region segments that will be composed onto it. Producing one
 // costs header parsing only -- no coded data is read and no bitmap is

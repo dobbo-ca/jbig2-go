@@ -17,7 +17,8 @@ var mem struct {
 
 // SetMemoryLimit sets the bytes all concurrent calls may hold between them.
 // A call reserves its estimated peak before allocating and returns
-// ErrMemoryLimit if that does not fit. n <= 0 restores the default: half of
+// ErrMemoryLimit if that does not fit now, or a *LimitError named
+// "MemoryLimit" if it could never fit, even with nothing else in use. n <= 0 restores the default: half of
 // GOMEMLIMIT or of the cgroup limit, whichever is lower, or 1 GiB with neither.
 func SetMemoryLimit(n int64) {
 	mem.Lock()
@@ -31,6 +32,9 @@ func reserve(n int64) (func(), error) {
 	limit := mem.limit
 	if limit == 0 {
 		limit = defaultMemoryLimit()
+	}
+	if n > limit {
+		return nil, &LimitError{Name: "MemoryLimit", Got: n, Max: limit}
 	}
 	if n > limit-mem.used {
 		return nil, fmt.Errorf("%w: need %d bytes, %d of %d in use", ErrMemoryLimit, n, mem.used, limit)

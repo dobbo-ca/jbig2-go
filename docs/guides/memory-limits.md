@@ -13,6 +13,16 @@ input content is echoed.
 | `PagePixels` | 500 000 000 | page pixels, the pixels of all regions together, and any one symbol's width or height |
 | `Symbols` | 1<<20 | symbols per dictionary and per stream |
 | `Regions` | 1<<16 | segments per stream |
+| `MaxBytes` | 0 (no bound) | the most memory one call may reserve, by the estimate below |
+| `Reserved` | false | the caller already holds `MaxBytes` for this call |
+
+`MaxBytes` bounds a call by the library's own estimate. An estimate above it is
+a `*LimitError{Name: "MaxBytes"}`, returned before anything is allocated. It is
+permanent: the call can never fit. `Reserved` says the caller reserved
+`MaxBytes` from its own pool, so the call skips the process-wide pool below and
+is bounded by `MaxBytes` alone (the jpeg-go model). `Reserved` without
+`MaxBytes`, and a negative `MaxBytes`, are `ErrInvalid`. Both apply to `Decode`
+and `Encode`.
 
 Derived from `PagePixels`, and not separately configurable: the page's and all
 regions' packed bytes together may not exceed `PagePixels/4`; regions may
@@ -27,8 +37,10 @@ charged before each symbol is allocated. `Encode` checks `W*H` against
 ## Process wide: `SetMemoryLimit`
 
 `SetMemoryLimit(n)` caps the bytes all concurrent calls hold between them. A
-call reserves its estimated peak (below) and returns `ErrMemoryLimit` if it does
-not fit; the reservation is released when the call returns. The default, and
+call reserves its estimated peak (below). If that does not fit what is free now
+but would fit alone, the call returns `ErrMemoryLimit` (transient: retry later).
+If it is larger than the whole limit it can never fit and the call returns a
+`*LimitError{Name: "MemoryLimit"}` (permanent). The reservation is released when the call returns. The default, and
 `SetMemoryLimit(0)`, is half of `GOMEMLIMIT` or of the cgroup limit, whichever
 is lower, and 1 GiB with neither.
 
@@ -50,3 +62,11 @@ Decode time is linear in decoded pixels and cannot be bounded from the input
 length: a blank region codes in a few bytes. `ctx` is checked before every row
 (every symbol and every 1024 text instances), so cancellation latency is one row
 of work.
+
+## Page size
+
+`PageSize(data, globals)` reads the page-information segment's width and height
+from the segment headers, allocating nothing proportional to the page, so a
+caller can budget a decode first. An unknown height (striped page), no
+page-information segment, or malformed headers return an error wrapping
+`ErrNoPageSize`.

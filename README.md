@@ -14,6 +14,12 @@ pixels, TPGDON). Decode reads generic regions (all templates, any AT pixels) and
 arithmetic symbol dictionaries and text regions. Huffman, MMR, refinement and
 halftone coding return `ErrUnsupportedFeature`.
 
+`PageSize(data, globals)` returns the page size from the headers alone.
+`Limits.MaxBytes` bounds a call's estimated memory, and `Limits.Reserved` lets a
+caller that already holds that memory skip the package pool. A call that can
+never fit is a `*LimitError` (`MaxBytes` or `MemoryLimit`); `ErrMemoryLimit` now
+means only "would fit alone, but not now".
+
 Every call takes `Limits` and a context; see
 [docs/guides/memory-limits.md](docs/guides/memory-limits.md).
 
