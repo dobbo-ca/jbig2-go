@@ -1011,8 +1011,10 @@ func PageSizeLimits(globals, s []byte, lim Limits) (w, h int, err error) {
 
 // PageInfoSize is the page-information segment's width and height, from the
 // segment headers alone: unlike PageSizeLimits it does not plan the regions,
-// so a stream cut off after the page-information segment still answers, and an
-// unknown height (0xFFFFFFFF) is an error rather than sized from regions.
+// and an unknown height (0xFFFFFFFF) is an error rather than sized from
+// regions. Every segment header must parse: a stream that ends on a segment
+// boundary after the page-information segment still answers, but one cut
+// inside a segment, or with a malformed segment anywhere, is an error.
 func PageInfoSize(globals, s []byte) (w, h int, err error) {
 	if len(globals) > 0 {
 		joined := make([]byte, 0, len(globals)+len(s))

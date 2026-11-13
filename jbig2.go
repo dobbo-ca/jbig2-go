@@ -9,8 +9,11 @@
 // ErrUnsupportedFeature before any coded bit is read.
 //
 // Every entry point takes Limits, checked against the stream's headers before
-// anything is allocated, and a context checked between rows. See
-// docs/guides/memory-limits.md.
+// anything is allocated, and a context checked between rows. Memory comes
+// from a process-wide pool (SetMemoryLimit), or, with Limits.Reserved, from
+// the caller's own reservation bounded by Limits.MaxBytes. A request that can
+// never fit is a permanent *LimitError; ErrMemoryLimit means it would fit
+// alone but not now, and is transient. See docs/guides/memory-limits.md.
 package jbig2
 
 import (
